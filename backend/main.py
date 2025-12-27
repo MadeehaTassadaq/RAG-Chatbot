@@ -38,6 +38,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "https://agreeable-sand-0efbb301e.4.azurestaticapps.net",
+        "https://rag-chatbot-3-jotu.onrender.com",
         "http://localhost:3000",
         "http://localhost:3001",
         "http://127.0.0.1:3000",
