@@ -104,21 +104,40 @@ class WebExtractor:
             base_domain = f"{urlparse(self.base_url).scheme}://{urlparse(self.base_url).netloc}"
             links = soup.find_all('a', href=True)
 
+            # Also look for Docusaurus sidebar/navigation links
+            sidebar_selectors = ['nav', '.sidebar', '[role="navigation"]', '.menu__link', '.nav-link']
+            for selector in sidebar_selectors:
+                sidebar_elements = soup.select(selector)
+                for elem in sidebar_elements:
+                    for link in elem.find_all('a', href=True):
+                        if link['href']:
+                            links.append(link)
+
             for link in links:
-                href = link['href']
+                href = link.get('href', '')
+
+                # Skip external links, empty hrefs, and anchor-only links
+                if not href or href.startswith('#') or href.startswith('mailto:') or href.startswith('tel:') or href.startswith('http://') or href.startswith('https://'):
+                    continue
 
                 # Convert relative URLs to absolute URLs
                 absolute_url = urljoin(current_url, href)
 
-                # Only follow links within the same domain and starting with /docs/ or #
+                # Only follow links within the same domain
                 if absolute_url.startswith(base_domain):
+                    # Get the path portion
                     path = urlparse(absolute_url).path
-                    if (path.startswith('/docs/') or path == '/' or path == '') and absolute_url not in visited:
+
+                    # Follow all internal links but skip API and static asset paths
+                    excluded_patterns = ['/api/', '.json', '.xml', '.css', '.js', '.ico', '.png', '.jpg', '.svg', '.woff']
+                    should_skip = any(pattern in absolute_url.lower() for pattern in excluded_patterns)
+
+                    if not should_skip and absolute_url not in visited:
                         urls_to_visit.append(absolute_url)
 
             # Add small delay to avoid being blocked by Azure
             import time
-            time.sleep(1)
+            time.sleep(0.5)
 
         return pages
 
