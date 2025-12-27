@@ -11,13 +11,22 @@ import os
 import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime
+from pathlib import Path
 from typing import Dict, List, Optional
+
+# Load environment variables from .env file
+from dotenv import load_dotenv
+
+# Get the directory where main.py is located
+base_dir = Path(__file__).resolve().parent
+env_path = base_dir / ".env"
+load_dotenv(dotenv_path=env_path)
 
 import asyncpg
 import cohere
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from openai import AsyncOpenAI
+from openai import OpenAI
 from pydantic import BaseModel
 from qdrant_client import QdrantClient
 from qdrant_client.http import models
@@ -72,7 +81,7 @@ async def init_db():
         # Create chat_history table
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS chat_history (
-                id SERIAL KEY,
+                id SERIAL PRIMARY KEY,
                 session_id VARCHAR(255) REFERENCES sessions(session_id) ON DELETE CASCADE,
                 role VARCHAR(50) NOT NULL,
                 content TEXT NOT NULL,
@@ -129,8 +138,8 @@ class SelectionResponse(BaseModel):
     session_id: str
 
 
-class AsyncRAGAgent:
-    """Async RAG Agent that handles retrieval, response generation, and citations using OpenAI SDK for Gemini."""
+class RAGAgent:
+    """RAG Agent that handles retrieval, response generation, and citations using OpenAI SDK for Gemini."""
 
     def __init__(self):
         # Initialize Qdrant client
@@ -142,10 +151,10 @@ class AsyncRAGAgent:
         # Initialize Cohere client for embeddings
         self.cohere_client = cohere.Client(os.getenv("COHERE_API_KEY"))
 
-        # Initialize AsyncOpenAI client for Gemini (using OpenAI SDK format)
-        self.client = AsyncOpenAI(
-            api_key=os.getenv("GEMINI_API_KEY"),
-            base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
+        # Initialize OpenAI client for Gemini via OpenRouter
+        self.client = OpenAI(
+            api_key=os.getenv("OPEN_ROUTER_API_KEY") or os.getenv("GEMINI_API_KEY"),
+            base_url="https://openrouter.ai/api/v1",
         )
 
         # System prompt with enhanced agentic reasoning
@@ -162,7 +171,7 @@ Follow these reasoning patterns:
 Always cite the sources (chapters/sections) you used to form your answer.
 If you're unsure about something, acknowledge that uncertainty rather than guessing."""
 
-    async def retrieve_content(self, query: str, limit: int = 3) -> List[Dict]:
+    def retrieve_content(self, query: str, limit: int = 3) -> List[Dict]:
         """Retrieve relevant content from Qdrant based on the query."""
         try:
             # Generate embedding for the query using Cohere
@@ -199,18 +208,18 @@ If you're unsure about something, acknowledge that uncertainty rather than guess
             print(f"Error retrieving content: {e}")
             return []
 
-    async def generate_response(
+    def generate_response(
         self, user_query: str, chat_history: List[Dict], additional_context: Dict = None
     ) -> tuple[str, List[str]]:
         """
-        Generate a response using AsyncOpenAI SDK with Gemini with retrieved context.
+        Generate a response using OpenAI SDK with Gemini with retrieved context.
 
         Returns:
             - Generated response text
             - List of citations (chapter references)
         """
         # Retrieve relevant content from Qdrant
-        retrieved_content = await self.retrieve_content(user_query)
+        retrieved_content = self.retrieve_content(user_query)
 
         # Build context for the assistant with enhanced reasoning
         context_parts = []
@@ -221,9 +230,7 @@ If you're unsure about something, acknowledge that uncertainty rather than guess
         # Add user-highlighted text if available (prioritized as primary context)
         if additional_context and "selected_texts" in additional_context:
             context_parts.append("USER HIGHLIGHTED TEXT (PRIMARY CONTEXT):")
-            for selection in additional_context["selected_texts"][
-                -5:
-            ]:  # Last 5 selections
+            for selection in additional_context["selected_texts"][-5:]:
                 context_parts.append(
                     f"[Highlighted at {selection.get('timestamp', 'unknown')}]"
                 )
@@ -238,12 +245,12 @@ If you're unsure about something, acknowledge that uncertainty rather than guess
                 context_parts.append(f"Section: {content['header']}")
                 context_parts.append(
                     f"Content: {content['content'][:800]}..."
-                )  # Increased content length
+                )
 
         # Add chat history if available
         if chat_history:
             context_parts.append("CONVERSATION HISTORY:")
-            for message in chat_history[-8:]:  # Last 8 messages for better context
+            for message in chat_history[-8:]:
                 role = message["role"].upper()
                 content = message["content"]
                 context_parts.append(f"{role}: {content}")
@@ -251,7 +258,7 @@ If you're unsure about something, acknowledge that uncertainty rather than guess
         # Combine all context
         full_context = "\n\n".join(context_parts)
 
-        # Create the messages for AsyncOpenAI SDK
+        # Create the messages for OpenAI SDK
         messages = [
             {"role": "system", "content": full_context},
             {
@@ -261,9 +268,9 @@ If you're unsure about something, acknowledge that uncertainty rather than guess
         ]
 
         try:
-            # Generate response using AsyncOpenAI SDK with Gemini
-            response = await self.client.chat.completions.create(
-                model="gemini-pro",  # Using Gemini Pro model through OpenAI SDK
+            # Generate response using OpenAI SDK with OpenRouter
+            response = self.client.chat.completions.create(
+                model=os.getenv("MODEL", "mistralai/devstral-2512:free"),
                 messages=messages,
                 temperature=0.3,
                 max_tokens=1500,
@@ -276,7 +283,7 @@ If you're unsure about something, acknowledge that uncertainty rather than guess
                 else "I couldn't generate a proper response. Please try again."
             )
 
-            # Extract citations (try to identify chapter references)
+            # Extract citations
             citations = self.extract_citations(assistant_response, retrieved_content)
 
             return assistant_response, citations
@@ -383,8 +390,8 @@ async def chat(chat_request: ChatRequest):
     # Create or validate session ID
     session_id = chat_request.session_id or str(uuid.uuid4())
 
-    # Initialize the async agent
-    agent = AsyncRAGAgent()
+    # Initialize the agent
+    agent = RAGAgent()
 
     # Get session context
     context = await get_session_context(session_id)
@@ -392,9 +399,9 @@ async def chat(chat_request: ChatRequest):
     # Get chat history for context
     history = await get_chat_history(session_id)
 
-    # Generate response using the async agent
+    # Generate response using the agent
     try:
-        response, citations = await agent.generate_response(
+        response, citations = agent.generate_response(
             user_query=chat_request.message,
             chat_history=history,
             additional_context=context,
