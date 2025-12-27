@@ -14,14 +14,30 @@ from datetime import datetime
 from typing import Dict, List, Optional
 
 import asyncpg
+import cohere
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
 from openai import AsyncOpenAI
-
-import cohere
+from pydantic import BaseModel
 from qdrant_client import QdrantClient
 from qdrant_client.http import models
+
+app = FastAPI(title="RAG Agent Backend", version="1.1.0")
+
+# Add CORS middleware to allow requests from Azure Static Web App
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "https://agreeable-sand-0efbb301e.4.azurestaticapps.net",
+        "http://localhost:3000",
+        "http://localhost:3001",
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:3001",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Database connection setup
 DATABASE_URL = os.getenv("NEON_DATABASE_URL")
@@ -87,7 +103,9 @@ async def startup_event():
         print("Database initialized successfully")
     except Exception as e:
         print(f"Warning: Could not initialize database: {e}")
-        print("Some features may not be available until database connection is established")
+        print(
+            "Some features may not be available until database connection is established"
+        )
 
 
 class ChatRequest(BaseModel):
@@ -203,18 +221,24 @@ If you're unsure about something, acknowledge that uncertainty rather than guess
         # Add user-highlighted text if available (prioritized as primary context)
         if additional_context and "selected_texts" in additional_context:
             context_parts.append("USER HIGHLIGHTED TEXT (PRIMARY CONTEXT):")
-            for selection in additional_context["selected_texts"][-5:]:  # Last 5 selections
-                context_parts.append(f"[Highlighted at {selection.get('timestamp', 'unknown')}]")
+            for selection in additional_context["selected_texts"][
+                -5:
+            ]:  # Last 5 selections
+                context_parts.append(
+                    f"[Highlighted at {selection.get('timestamp', 'unknown')}]"
+                )
                 context_parts.append(f"Text: {selection['text']}")
 
         # Add retrieved content from the document collection
         if retrieved_content:
             context_parts.append("RELEVANT DOCUMENT SECTIONS:")
             for i, content in enumerate(retrieved_content):
-                context_parts.append(f"--- Source {i+1} ---")
+                context_parts.append(f"--- Source {i + 1} ---")
                 context_parts.append(f"URL: {content['url']}")
                 context_parts.append(f"Section: {content['header']}")
-                context_parts.append(f"Content: {content['content'][:800]}...")  # Increased content length
+                context_parts.append(
+                    f"Content: {content['content'][:800]}..."
+                )  # Increased content length
 
         # Add chat history if available
         if chat_history:
@@ -230,7 +254,10 @@ If you're unsure about something, acknowledge that uncertainty rather than guess
         # Create the messages for AsyncOpenAI SDK
         messages = [
             {"role": "system", "content": full_context},
-            {"role": "user", "content": f"User Query: {user_query}\n\nPlease provide a helpful, well-reasoned response based on the provided context. Cite relevant sources."}
+            {
+                "role": "user",
+                "content": f"User Query: {user_query}\n\nPlease provide a helpful, well-reasoned response based on the provided context. Cite relevant sources.",
+            },
         ]
 
         try:
@@ -283,24 +310,6 @@ If you're unsure about something, acknowledge that uncertainty rather than guess
         return list(citations)[:5]
 
 
-app = FastAPI(title="RAG Agent Backend", version="1.1.0")
-
-# Add CORS middleware to allow requests from Azure Static Web App
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[
-        "https://agreeable-sand-0efbb301e.4.azurestaticapps.net",
-        "http://localhost:3000",
-        "http://localhost:3001",
-        "http://127.0.0.1:3000",
-        "http://127.0.0.1:3001"
-    ],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-
 async def get_session_context(session_id: str) -> Dict:
     """Retrieve session context from database asynchronously."""
     async with get_db_connection() as conn:
@@ -323,7 +332,8 @@ async def update_session_context(session_id: str, context: Dict):
         await conn.execute(
             "INSERT INTO sessions (session_id, context, last_active) VALUES ($1, $2, CURRENT_TIMESTAMP) "
             "ON CONFLICT (session_id) DO UPDATE SET context = $2, last_active = CURRENT_TIMESTAMP",
-            session_id, context_json,
+            session_id,
+            context_json,
         )
 
 
@@ -340,7 +350,9 @@ async def save_chat_message(session_id: str, role: str, content: str):
         # Now insert the chat message
         await conn.execute(
             "INSERT INTO chat_history (session_id, role, content) VALUES ($1, $2, $3)",
-            session_id, role, content,
+            session_id,
+            role,
+            content,
         )
 
 
@@ -353,7 +365,12 @@ async def get_chat_history(session_id: str) -> List[Dict]:
                 session_id,
             )
             return [
-                {"role": row["role"], "content": row["content"], "timestamp": row["timestamp"]} for row in rows
+                {
+                    "role": row["role"],
+                    "content": row["content"],
+                    "timestamp": row["timestamp"],
+                }
+                for row in rows
             ]
         except Exception as e:
             print(f"Error retrieving chat history: {e}")
