@@ -1,0 +1,194 @@
+openapi: 3.0.3
+info:
+  title: RAG Agent Backend API
+  description: API for RAG-based chatbot with Gemini integration
+  version: 1.0.0
+servers:
+  - url: https://your-deployment-url.onrender.com
+    description: Production server
+  - url: http://localhost:8000
+    description: Development server
+
+paths:
+  /api/chat:
+    post:
+      summary: Send a message and receive an AI response
+      description: Main chat endpoint that processes user messages using RAG and returns AI-generated responses with citations
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChatRequest'
+      responses:
+        '200':
+          description: Successful response with AI-generated content
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatResponse'
+        '400':
+          description: Bad request - invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/chat/selection:
+    post:
+      summary: Store selected/highlighted text as context
+      description: Endpoint to store user-highlighted text to be used as primary context for subsequent queries
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SelectionRequest'
+      responses:
+        '200':
+          description: Selection stored successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SelectionResponse'
+        '400':
+          description: Bad request - invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /health:
+    get:
+      summary: Health check endpoint
+      description: Returns the health status of the service
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
+  /:
+    get:
+      summary: Root endpoint
+      description: Returns service status for Render deployment health check
+      responses:
+        '200':
+          description: Service is live
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RootResponse'
+
+components:
+  schemas:
+    ChatRequest:
+      type: object
+      required:
+        - message
+      properties:
+        message:
+          type: string
+          description: The user's message/query
+          example: "What are the key principles of humanoid robotics?"
+        session_id:
+          type: string
+          description: Optional session identifier, will be generated if not provided
+          example: "550e8400-e29b-41d4-a716-446655440000"
+
+    ChatResponse:
+      type: object
+      required:
+        - response
+        - session_id
+        - citations
+      properties:
+        response:
+          type: string
+          description: The AI-generated response to the user's message
+          example: "The key principles of humanoid robotics include..."
+        session_id:
+          type: string
+          description: The session identifier (newly created or existing)
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        citations:
+          type: array
+          items:
+            type: string
+          description: List of sources cited in the response
+          example: ["https://example.com/doc1", "Section: Control Systems"]
+
+    SelectionRequest:
+      type: object
+      required:
+        - selected_text
+        - session_id
+      properties:
+        selected_text:
+          type: string
+          description: The highlighted text selected by the user
+          example: "The primary control system uses inverse kinematics to determine joint angles."
+        session_id:
+          type: string
+          description: The session identifier to associate the selection with
+          example: "550e8400-e29b-41d4-a716-446655440000"
+
+    SelectionResponse:
+      type: object
+      required:
+        - status
+        - session_id
+      properties:
+        status:
+          type: string
+          description: Status message indicating success
+          example: "Selection saved successfully"
+        session_id:
+          type: string
+          description: The session identifier the selection was associated with
+          example: "550e8400-e29b-41d4-a716-446655440000"
+
+    HealthResponse:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          description: Health status of the service
+          enum: [healthy]
+          example: "healthy"
+
+    RootResponse:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          description: Service status
+          example: "Chatbot API is live"
+
+    ErrorResponse:
+      type: object
+      required:
+        - detail
+      properties:
+        detail:
+          type: string
+          description: Error message describing what went wrong
+          example: "Error generating response: API key not found"
