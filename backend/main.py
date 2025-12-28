@@ -36,10 +36,16 @@ app = FastAPI(title="RAG Agent Backend", version="1.1.0")
 # Add CORS middleware to allow requests from Azure Static Web App
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "https://agreeable-sand-0efbb301e.4.azurestaticapps.net",
+        "https://rag-chatbot-3-jotu.onrender.com",
+        "http://localhost:3000",
+        "http://localhost:5173",
+    ],
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
+    expose_headers=["*"],
 )
 
 # Database connection setup
