@@ -36,14 +36,7 @@ app = FastAPI(title="RAG Agent Backend", version="1.1.0")
 # Add CORS middleware to allow requests from Azure Static Web App
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "https://agreeable-sand-0efbb301e.4.azurestaticapps.net",
-        "https://rag-chatbot-3-jotu.onrender.com",
-        "http://localhost:3000",
-        "http://localhost:3001",
-        "http://127.0.0.1:3000",
-        "http://127.0.0.1:3001",
-    ],
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -244,9 +237,7 @@ If you're unsure about something, acknowledge that uncertainty rather than guess
                 context_parts.append(f"--- Source {i + 1} ---")
                 context_parts.append(f"URL: {content['url']}")
                 context_parts.append(f"Section: {content['header']}")
-                context_parts.append(
-                    f"Content: {content['content'][:800]}..."
-                )
+                context_parts.append(f"Content: {content['content'][:800]}...")
 
         # Add chat history if available
         if chat_history:
